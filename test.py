@@ -1,15 +1,21 @@
 # test.py
 """
-Test evaluation on MNIST test split.
+Test evaluation utilities for MNIST.
 
-CHANGES vs tutorial repo:
-- best_model.pt yüklenir ve test accuracy hesaplanır.
-- Type hints + docstrings.
+This module provides a single helper function, `test_model`, which evaluates a
+trained model on the official MNIST test split and reports:
+- Average cross-entropy loss
+- Classification accuracy
+
+Notes
+-----
+- The model is assumed to output logits of shape (B, num_classes).
+- This function uses `torch.no_grad()` to speed up evaluation and reduce memory usage.
+- MNIST is downloaded automatically if not present under `data_dir`.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Tuple
 
 import torch
@@ -27,12 +33,42 @@ def test_model(
     device: torch.device,
 ) -> Tuple[float, float]:
     """
-    Evaluate model on MNIST test set.
-    Returns (avg_loss, accuracy).
+    Evaluate a model on the MNIST test split.
+
+    Parameters
+    ----------
+    model:
+        Trained model to evaluate. Must output logits (unnormalized scores).
+    data_dir:
+        Root directory to download/cache MNIST.
+    batch_size:
+        Batch size for the test DataLoader.
+    num_workers:
+        Number of worker processes for the DataLoader.
+    device:
+        Device on which evaluation is performed.
+
+    Returns
+    -------
+    (avg_loss, accuracy):
+        - avg_loss: Average cross-entropy loss across the test set.
+        - accuracy: Fraction of correctly classified samples in [0, 1].
+
+    Notes
+    -----
+    - Uses `nn.CrossEntropyLoss`, so do NOT apply softmax in the model.
+    - Assumes MNIST input images are shaped (B, 1, 28, 28) and labels are (B,).
     """
     tf = transforms.Compose([transforms.ToTensor()])
     test_ds = datasets.MNIST(root=data_dir, train=False, download=True, transform=tf)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
 
     loss_fn = nn.CrossEntropyLoss()
 
@@ -48,9 +84,11 @@ def test_model(
         logits = model(x)
         loss = loss_fn(logits, y)
 
-        total_loss += loss.item() * x.size(0)
+        total_loss += float(loss.item()) * x.size(0)
         pred = logits.argmax(dim=1)
-        correct += (pred == y).sum().item()
-        total += x.size(0)
+        correct += int((pred == y).sum().item())
+        total += int(x.size(0))
 
-    return total_loss / max(total, 1), correct / max(total, 1)
+    avg_loss = total_loss / max(total, 1)
+    acc = correct / max(total, 1)
+    return avg_loss, acc
